@@ -7,8 +7,11 @@ const Employee = require('../models/Employee');
  */
 exports.addEmployee = async (req, res) => {
   try {
-    // Expects: name, employeeID, department, designation, salaryStructure, and bankDetails [cite: 52]
-    const newEmployee = await Employee.create(req.body);
+    /** * Expects full payload from frontend including:
+     * - salaryStructure: { grossSalary, basic, da, hra, pf, tax }
+     * - bankDetails: { bankName, accountNumber, ifscCode }
+     */
+    const newEmployee = await Employee.create(req.body); // Automatically validates against new Schema
     
     res.status(201).json({ 
       success: true, 
@@ -16,7 +19,7 @@ exports.addEmployee = async (req, res) => {
       data: newEmployee 
     });
   } catch (err) {
-    // Handles duplicate employeeID or missing required fields
+    // Handles duplicate employeeID, validation failures, or missing fields
     res.status(400).json({ 
       success: false, 
       error: err.message 
@@ -25,12 +28,12 @@ exports.addEmployee = async (req, res) => {
 };
 
 /**
- * @desc    Get All Employees for Management List [cite: 54, 70]
+ * @desc    Get All Employees for Management List
  * @route   GET /api/employees
  */
 exports.getEmployees = async (req, res) => {
   try {
-    // Retrieves profiles including Department, Designation, and Salary [cite: 68-70]
+    // Retrieves profiles including detailed Salary breakdown and Bank details
     const employees = await Employee.find();
     
     res.status(200).json({ 
@@ -46,9 +49,13 @@ exports.getEmployees = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Get Single Employee by MongoDB ID
+ * @route   GET /api/employees/:id
+ */
 exports.getEmployeeById = async (req, res) => {
   try {
-    // req.params.id comes from the URL
+    // req.params.id is passed from the dynamic route in employeeRoutes.js
     const employee = await Employee.findById(req.params.id);
     
     if (!employee) {

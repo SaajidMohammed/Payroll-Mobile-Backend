@@ -1,15 +1,14 @@
 const Payroll = require("../models/Payroll");
 const Employee = require("../models/Employee");
 const Loan = require("../models/Loan");
-const { calculateNetSalary } = require("../utils/salaryCalculator");
 
 /**
- * @desc    Process monthly payroll with statutory deductions
+ * @desc    Process monthly payroll with detailed components (Basic, DA, HRA, Tax, PF)
  * @route   POST /api/payroll/run
  */
 exports.processPayroll = async (req, res) => {
   try {
-    const { monthYear } = req.body; // Expects: "Jan 2022"
+    const { monthYear } = req.body; // Expects: "Jan 2026"
 
     // 1. Fetch all active employees for processing
     const activeEmployees = await Employee.find({ status: "Active" });
@@ -28,43 +27,56 @@ exports.processPayroll = async (req, res) => {
     // 2. Iterate through employees to calculate individual components
     const processedEmployees = await Promise.all(
       activeEmployees.map(async (emp) => {
+        // Extract the detailed breakdown from the employee record
+        const { 
+          basic = 0, 
+          da = 0, 
+          hra = 0, 
+          pf = 0, 
+          tax = 0, 
+          grossSalary = 0 
+        } = emp.salaryStructure;
+
         // Fetch active loans to apply EMI deductions
         const activeLoan = await Loan.findOne({
           employee: emp._id,
           status: "Active",
         });
 
-        // Calculate EMI if loan exists and tenure is valid
+        // Calculate EMI if loan exists
         const emiAmount =
           activeLoan && activeLoan.tenureMonths > 0
             ? activeLoan.loanAmount / activeLoan.tenureMonths
             : 0;
 
-        // Calculate salary using statutory logic (PF, ESI, TDS)
-        // Uses 'grossSalary' from Employee salary structure
-        const salaryDetails = calculateNetSalary(
-          emp.salaryStructure.grossSalary,
-          emiAmount,
-        );
+        // Calculation Logic: Final Net Salary
+        // Net = (Basic + DA + HRA) - (PF + Tax + Loan EMI)
+        const earnings = basic + da + hra;
+        const statutoryDeductions = pf + tax;
+        const totalEmpDeductions = statutoryDeductions + emiAmount;
+        const netSalary = earnings - totalEmpDeductions;
 
-        totalGrossPayout += salaryDetails.grossSalary;
-        totalNetPayout += salaryDetails.netSalary;
-        totalDeductions += salaryDetails.totalDeductions;
+        // Aggregate totals for the Payroll entry
+        totalGrossPayout += earnings;
+        totalNetPayout += netSalary;
+        totalDeductions += totalEmpDeductions;
 
         return {
           employeeId: emp._id,
           name: emp.name,
-          ...salaryDetails,
+          earnings: { basic, da, hra },
+          deductions: { pf, tax, emi: emiAmount },
+          netSalary: netSalary,
+          grossSalary: earnings
         };
       }),
     );
 
     // 3. Create the payroll entry for the dashboard summary
-    // UPDATED: Mapping keys to match your specific Schema requirements
     const payrollEntry = await Payroll.create({
-      monthYear: monthYear, // Fixed from 'month'
-      totalGrossPay: totalGrossPayout, // Fixed from 'totalPayout'
-      totalNetPay: totalNetPayout, // Fixed from 'netPayable'
+      monthYear: monthYear, 
+      totalGrossPay: totalGrossPayout, 
+      totalNetPay: totalNetPayout, 
       totalEmployees: activeEmployees.length,
       totalDeductions: totalDeductions,
       status: "Processed",
@@ -76,7 +88,6 @@ exports.processPayroll = async (req, res) => {
       employeeBreakdown: processedEmployees,
     });
   } catch (err) {
-    // Catch-all for database or calculation errors
     res.status(500).json({ success: false, error: err.message });
   }
 };
