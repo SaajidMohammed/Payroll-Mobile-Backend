@@ -4,37 +4,40 @@ const Loan = require('../models/Loan');
 const { calculateNetSalary } = require('../utils/salaryCalculator');
 
 /**
- * @desc    Process monthly payroll with statutory deductions [cite: 88, 90, 101]
+ * @desc    Process monthly payroll with statutory deductions
  * @route   POST /api/payroll/run
  */
 exports.processPayroll = async (req, res) => {
   try {
-    const { monthYear } = req.body; // e.g., "Jan 2022" [cite: 225]
+    const { monthYear } = req.body; // Expects: "Jan 2022"
 
-    // 1. Fetch all active employees for processing [cite: 7, 28, 275]
+    // 1. Fetch all active employees for processing
     const activeEmployees = await Employee.find({ status: 'Active' });
 
     if (activeEmployees.length === 0) {
-      return res.status(400).json({ success: false, message: "No active employees found" });
+      return res.status(400).json({ 
+        success: false, 
+        message: "No active employees found to process payroll." 
+      });
     }
 
     let totalGrossPayout = 0;
     let totalNetPayout = 0;
     let totalDeductions = 0;
 
-    // 2. Iterate through employees to calculate individual components [cite: 91, 297]
+    // 2. Iterate through employees to calculate individual components
     const processedEmployees = await Promise.all(activeEmployees.map(async (emp) => {
       
-      // Fetch active loans to apply EMI deductions [cite: 137, 178]
+      // Fetch active loans to apply EMI deductions
       const activeLoan = await Loan.findOne({ employee: emp._id, status: 'Active' });
       
-      // Calculate EMI if tenure exists 
+      // Calculate EMI if loan exists and tenure is valid
       const emiAmount = (activeLoan && activeLoan.tenureMonths > 0) 
         ? (activeLoan.loanAmount / activeLoan.tenureMonths) 
         : 0;
 
-      // Calculate salary based on structure defined in Employee Management [cite: 49, 101, 104]
-      // Uses 'grossSalary' from the Employee model [cite: 70, 76]
+      // Calculate salary using statutory logic (PF, ESI, TDS)
+      // Uses 'grossSalary' from Employee salary structure
       const salaryDetails = calculateNetSalary(emp.salaryStructure.grossSalary, emiAmount);
 
       totalGrossPayout += salaryDetails.grossSalary;
@@ -48,15 +51,15 @@ exports.processPayroll = async (req, res) => {
       };
     }));
 
-    // 3. Create the payroll entry for the dashboard summary [cite: 12, 13]
-    // FIXED: Using keys that match your updated Payroll Model to avoid validation errors
+    // 3. Create the payroll entry for the dashboard summary
+    // UPDATED: Mapping keys to match your specific Schema requirements
     const payrollEntry = await Payroll.create({
-      monthYear: monthYear, // Fulfills "month" requirement [cite: 24, 268]
-      totalEmployees: activeEmployees.length, // [cite: 6, 266]
-      totalGrossPay: totalGrossPayout, // Maps to 'Yousi Employes' total [cite: 231]
-      totalNetPay: totalNetPayout,     // Maps to 'Veal Emn Doly' (Net Pay) [cite: 237]
+      month: monthYear,              // Fixes 'month' validation error
+      totalEmployees: activeEmployees.length, //
+      totalPayout: totalGrossPayout,  // Fixes 'totalPayout' error
+      netPayable: totalNetPayout,     // Fixes 'netPayable' error
       totalDeductions: totalDeductions,
-      status: 'Processed' // Requirement: Lock and process payroll [cite: 92, 227, 259]
+      status: 'Processed'             // Requirement: Lock/Process payroll
     });
 
     res.status(200).json({ 
@@ -66,17 +69,18 @@ exports.processPayroll = async (req, res) => {
     });
 
   } catch (err) {
+    // Catch-all for database or calculation errors
     res.status(500).json({ success: false, error: err.message });
   }
 };
 
 /**
- * @desc    Get Recent Payroll History for Dashboard overview [cite: 4, 15]
+ * @desc    Get Recent Payroll History for Dashboard overview
  * @route   GET /api/payroll/recent
  */
 exports.getRecentPayroll = async (req, res) => {
   try {
-    // Fetches history for "Recent Payroll" summary list [cite: 23-27, 267-271]
+    // Fetches history for "Recent Payroll" summary list
     const history = await Payroll.find().sort({ createdAt: -1 }).limit(5);
     res.status(200).json({ success: true, data: history });
   } catch (err) {
