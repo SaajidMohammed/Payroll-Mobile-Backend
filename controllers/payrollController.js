@@ -1,7 +1,7 @@
-const Payroll = require('../models/Payroll'); 
-const Employee = require('../models/Employee');
-const Loan = require('../models/Loan');
-const { calculateNetSalary } = require('../utils/salaryCalculator');
+const Payroll = require("../models/Payroll");
+const Employee = require("../models/Employee");
+const Loan = require("../models/Loan");
+const { calculateNetSalary } = require("../utils/salaryCalculator");
 
 /**
  * @desc    Process monthly payroll with statutory deductions
@@ -12,12 +12,12 @@ exports.processPayroll = async (req, res) => {
     const { monthYear } = req.body; // Expects: "Jan 2022"
 
     // 1. Fetch all active employees for processing
-    const activeEmployees = await Employee.find({ status: 'Active' });
+    const activeEmployees = await Employee.find({ status: "Active" });
 
     if (activeEmployees.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "No active employees found to process payroll." 
+      return res.status(400).json({
+        success: false,
+        message: "No active employees found to process payroll.",
       });
     }
 
@@ -26,48 +26,55 @@ exports.processPayroll = async (req, res) => {
     let totalDeductions = 0;
 
     // 2. Iterate through employees to calculate individual components
-    const processedEmployees = await Promise.all(activeEmployees.map(async (emp) => {
-      
-      // Fetch active loans to apply EMI deductions
-      const activeLoan = await Loan.findOne({ employee: emp._id, status: 'Active' });
-      
-      // Calculate EMI if loan exists and tenure is valid
-      const emiAmount = (activeLoan && activeLoan.tenureMonths > 0) 
-        ? (activeLoan.loanAmount / activeLoan.tenureMonths) 
-        : 0;
+    const processedEmployees = await Promise.all(
+      activeEmployees.map(async (emp) => {
+        // Fetch active loans to apply EMI deductions
+        const activeLoan = await Loan.findOne({
+          employee: emp._id,
+          status: "Active",
+        });
 
-      // Calculate salary using statutory logic (PF, ESI, TDS)
-      // Uses 'grossSalary' from Employee salary structure
-      const salaryDetails = calculateNetSalary(emp.salaryStructure.grossSalary, emiAmount);
+        // Calculate EMI if loan exists and tenure is valid
+        const emiAmount =
+          activeLoan && activeLoan.tenureMonths > 0
+            ? activeLoan.loanAmount / activeLoan.tenureMonths
+            : 0;
 
-      totalGrossPayout += salaryDetails.grossSalary;
-      totalNetPayout += salaryDetails.netSalary;
-      totalDeductions += salaryDetails.totalDeductions;
+        // Calculate salary using statutory logic (PF, ESI, TDS)
+        // Uses 'grossSalary' from Employee salary structure
+        const salaryDetails = calculateNetSalary(
+          emp.salaryStructure.grossSalary,
+          emiAmount,
+        );
 
-      return {
-        employeeId: emp._id,
-        name: emp.name,
-        ...salaryDetails
-      };
-    }));
+        totalGrossPayout += salaryDetails.grossSalary;
+        totalNetPayout += salaryDetails.netSalary;
+        totalDeductions += salaryDetails.totalDeductions;
+
+        return {
+          employeeId: emp._id,
+          name: emp.name,
+          ...salaryDetails,
+        };
+      }),
+    );
 
     // 3. Create the payroll entry for the dashboard summary
     // UPDATED: Mapping keys to match your specific Schema requirements
     const payrollEntry = await Payroll.create({
-      month: monthYear,              // Fixes 'month' validation error
-      totalEmployees: activeEmployees.length, //
-      totalPayout: totalGrossPayout,  // Fixes 'totalPayout' error
-      netPayable: totalNetPayout,     // Fixes 'netPayable' error
+      monthYear: monthYear, // Fixed from 'month'
+      totalGrossPay: totalGrossPayout, // Fixed from 'totalPayout'
+      totalNetPay: totalNetPayout, // Fixed from 'netPayable'
+      totalEmployees: activeEmployees.length,
       totalDeductions: totalDeductions,
-      status: 'Processed'             // Requirement: Lock/Process payroll
+      status: "Processed",
     });
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       data: payrollEntry,
-      employeeBreakdown: processedEmployees 
+      employeeBreakdown: processedEmployees,
     });
-
   } catch (err) {
     // Catch-all for database or calculation errors
     res.status(500).json({ success: false, error: err.message });
