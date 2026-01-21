@@ -45,3 +45,18 @@ exports.getEmployees = async (req, res) => {
     });
   }
 };
+
+exports.getEmployeeById = async (req, res) => {
+  try {
+    // req.params.id comes from the URL
+    const employee = await Employee.findById(req.params.id);
+    
+    if (!employee) {
+      return res.status(404).json({ success: false, message: "Employee not found" });
+    }
+    
+    res.status(200).json({ success: true, data: employee });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
